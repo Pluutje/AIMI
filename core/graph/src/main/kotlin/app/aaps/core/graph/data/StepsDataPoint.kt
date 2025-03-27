@@ -15,7 +15,7 @@ class StepsDataPoint(
     override fun setY(y: Double) {}
 
     override val label: String = ""
-    override val duration = 800000L
+    override val duration = 80000L
     override val shape = Shape.STEPS
     override val size = 1f
     override val paintStyle: Paint.Style = Paint.Style.FILL
