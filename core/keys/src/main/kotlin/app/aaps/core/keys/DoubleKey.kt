@@ -1,5 +1,8 @@
 package app.aaps.core.keys
 
+import app.aaps.core.keys.interfaces.BooleanPreferenceKey
+import app.aaps.core.keys.interfaces.DoublePreferenceKey
+
 enum class DoubleKey(
     override val key: String,
     override val defaultValue: Double,
@@ -12,7 +15,8 @@ enum class DoubleKey(
     override val showInPumpControlMode: Boolean = true,
     override val dependency: BooleanPreferenceKey? = null,
     override val negativeDependency: BooleanPreferenceKey? = null,
-    override val hideParentScreenIfHidden: Boolean = false
+    override val hideParentScreenIfHidden: Boolean = false,
+    override val exportable: Boolean = true
 ) : DoublePreferenceKey {
 
     OverviewInsulinButtonIncrement1("insulin_button_increment_1", 0.5, -5.0, 5.0, defaultedBySM = true, dependency = BooleanKey.OverviewShowInsulinButton),
@@ -40,6 +44,7 @@ enum class DoubleKey(
     ApsAutoIsfBgBrakeWeight("bgBrake_ISF_weight", 0.0, 0.0, 1.0, defaultedBySM = true),
     ApsAutoIsfLowBgWeight("lower_ISFrange_weight", 0.0, 0.0, 2.0, defaultedBySM = true),
     ApsAutoIsfHighBgWeight("higher_ISFrange_weight", 0.0, 0.0, 2.0, defaultedBySM = true),
+    ApsAutoIsfSmbDeliveryRatioBgRange("openapsama_smb_delivery_ratio_bg_range", 0.0, 0.0, 100.0, defaultedBySM = true),
     ApsAutoIsfPpWeight("pp_ISF_weight", 0.0, 0.0, 1.0, defaultedBySM = true),
     ApsAutoIsfDuraWeight("dura_ISF_weight", 0.0, 0.0, 3.0, defaultedBySM = true),
     ApsAutoIsfSmbDeliveryRatio("openapsama_smb_delivery_ratio", 0.5, 0.5, 1.0, defaultedBySM = true),
@@ -67,6 +72,10 @@ enum class DoubleKey(
     OApsAIMIHyperFactor("key_oaps_aimi_hyper_factor",60.0,1.0,150.0),
     OApsAIMIsleepFactor("key_oaps_aimi_sleep_factor",60.0,1.0,150.0),
     OApsAIMIMealPrebolus("key_prebolus_meal_mode",2.0,0.1, 10.0),
+    OApsAIMIautodrivePrebolus("key_prebolus_autodrive_mode",1.0,0.1, 10.0),
+    OApsAIMIcombinedDelta("key_combinedDelta_autodrive_mode",1.0,0.1, 5.0),
+    OApsAIMIAutodriveDeviation("key_mindeviation_autodrive_mode",1.0,0.1, 5.0),
+    OApsAIMIAutodriveAcceleration("key_mindeviation_autodrive_mode",1.0,0.1, 5.0),
     OApsAIMILunchPrebolus("key_prebolus_lunch_mode",2.5,0.1, 10.0),
     OApsAIMILunchPrebolus2("key_prebolus2_lunch_mode",2.0,0.1, 10.0),
     OApsAIMIDinnerPrebolus("key_prebolus_dinner_mode",2.5,0.1, 10.0),

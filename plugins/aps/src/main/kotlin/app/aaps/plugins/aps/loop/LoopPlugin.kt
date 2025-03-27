@@ -35,6 +35,7 @@ import app.aaps.core.interfaces.constraints.Constraint
 import app.aaps.core.interfaces.constraints.ConstraintsChecker
 import app.aaps.core.interfaces.db.PersistenceLayer
 import app.aaps.core.interfaces.db.ProcessedTbrEbData
+import app.aaps.core.interfaces.iob.GlucoseStatusProvider
 import app.aaps.core.interfaces.iob.IobCobCalculator
 import app.aaps.core.interfaces.logging.AAPSLogger
 import app.aaps.core.interfaces.logging.LTag
@@ -64,15 +65,15 @@ import app.aaps.core.interfaces.rx.events.EventNewNotification
 import app.aaps.core.interfaces.rx.events.EventNewOpenLoopNotification
 import app.aaps.core.interfaces.rx.events.EventTempTargetChange
 import app.aaps.core.interfaces.rx.weardata.EventData
-import app.aaps.core.interfaces.sharedPreferences.SP
 import app.aaps.core.interfaces.ui.UiInteraction
 import app.aaps.core.interfaces.utils.DateUtil
 import app.aaps.core.interfaces.utils.HardLimits
 import app.aaps.core.interfaces.utils.fabric.FabricPrivacy
 import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.IntKey
-import app.aaps.core.keys.Preferences
+import app.aaps.core.keys.IntNonKey
 import app.aaps.core.keys.StringKey
+import app.aaps.core.keys.interfaces.Preferences
 import app.aaps.core.nssdk.interfaces.RunningConfiguration
 import app.aaps.core.objects.constraints.ConstraintObject
 import app.aaps.core.objects.extensions.asAnnouncement
@@ -98,7 +99,6 @@ class LoopPlugin @Inject constructor(
     aapsLogger: AAPSLogger,
     private val aapsSchedulers: AapsSchedulers,
     private val rxBus: RxBus,
-    private val sp: SP,
     private val preferences: Preferences,
     private val config: Config,
     private val constraintChecker: ConstraintsChecker,
@@ -118,7 +118,8 @@ class LoopPlugin @Inject constructor(
     private val runningConfiguration: RunningConfiguration,
     private val uiInteraction: UiInteraction,
     private val instantiator: Instantiator,
-    private val processedDeviceStatusData: ProcessedDeviceStatusData
+    private val processedDeviceStatusData: ProcessedDeviceStatusData,
+    private val glucoseStatusProvider: GlucoseStatusProvider
 ) : PluginBase(
     PluginDescription()
         .mainType(PluginType.LOOP)
@@ -151,8 +152,59 @@ class LoopPlugin @Inject constructor(
             // Skip db change of ending previous TT
             .debounce(10L, TimeUnit.SECONDS)
             .subscribe({ invoke("EventTempTargetChange", true) }, fabricPrivacy::logException)
+        // Démarrage du déclenchement périodique
+        startPeriodicLoop()
+    }
+    /*private fun startPeriodicLoop() {
+        // On récupère la valeur ApsMaxSmbFrequency en minutes
+        val freqMinutes = preferences.get(IntKey.ApsMaxSmbFrequency).toLong()
+        // On convertit en millisecondes
+        val freqMs = T.mins(freqMinutes).msecs()
+
+        // Définition du Runnable qui relancera votre loop, puis se replanifiera
+        val periodicRunnable = object : Runnable {
+            override fun run() {
+                // On relance le loop
+                invoke("PeriodicApsMaxSmbFrequency", true)
+
+                // On reprogramme le prochain run dans freqMs
+                handler?.postDelayed(this, freqMs)
+            }
+        }
+
+        // On lance la première fois maintenant
+        handler?.postDelayed(periodicRunnable, freqMs)
+    }*/
+    private fun startPeriodicLoop() {
+    // Récupère l'intervalle (en minutes) pour la planification
+    val freqMinutes = preferences.get(IntKey.ApsMaxSmbFrequency).toLong()
+    val freqMs = T.mins(freqMinutes).msecs()
+
+    val periodicRunnable = object : Runnable {
+        override fun run() {
+            // 1) Vérifie l'option autodrive
+            val autodrive = preferences.get(BooleanKey.OApsAIMIautoDrive)
+
+            // 2) Récupère la glycémie (ajustez le code si la variable/méthode diffère)
+            val currentBG = glucoseStatusProvider.glucoseStatusData?.glucose
+
+            // 3) Condition : autodrive activé ET glycémie disponible >= 120
+            if (autodrive && currentBG != null && currentBG >= 130.0) {
+                aapsLogger.debug(LTag.APS, "OApsAIMIautoDrive=$autodrive; BG=$currentBG => on lance le loop.")
+                invoke("PeriodicApsMaxSmbFrequency", true)
+            } else {
+                // Sinon, on logge qu'on ne fait rien
+                aapsLogger.debug(LTag.APS, "Pas de loop : autodrive=$autodrive; BG=$currentBG (<130 ?).")
+            }
+
+            // Replanifie le prochain cycle
+            handler?.postDelayed(this, freqMs)
+        }
     }
 
+    // Lance la première exécution
+    handler?.postDelayed(periodicRunnable, freqMs)
+}
     private fun createNotificationChannel() {
         val mNotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         @SuppressLint("WrongConstant") val channel = NotificationChannel(
@@ -329,13 +381,9 @@ class LoopPlugin @Inject constructor(
                 closedLoopEnabled = constraintChecker.isClosedLoopAllowed()
                 if (closedLoopEnabled?.value() == true) {
                     if (allowNotification) {
-                        if (resultAfterConstraints.isCarbsRequired
-                            && resultAfterConstraints.carbsReq >= sp.getInt(
-                                R.string.key_smb_enable_carbs_suggestions_threshold,
-                                0
-                            ) && carbsSuggestionsSuspendedUntil < System.currentTimeMillis() && !treatmentTimeThreshold(-15)
+                        if (resultAfterConstraints.isCarbsRequired && carbsSuggestionsSuspendedUntil < System.currentTimeMillis() && !treatmentTimeThreshold(-15)
                         ) {
-                            if (preferences.get(BooleanKey.AlertCarbsRequired) && !sp.getBoolean(app.aaps.core.ui.R.string.key_raise_notifications_as_android_notifications, true)
+                            if (preferences.get(BooleanKey.AlertCarbsRequired) && !preferences.get(BooleanKey.AlertUrgentAsAndroidNotification)
                             ) {
                                 val carbReqLocal = Notification(Notification.CARBS_REQUIRED, resultAfterConstraints.carbsRequiredText, Notification.NORMAL)
                                 rxBus.send(EventNewNotification(carbReqLocal))
@@ -350,7 +398,7 @@ class LoopPlugin @Inject constructor(
                                     listValues = listOf()
                                 ).subscribe()
                             }
-                            if (preferences.get(BooleanKey.AlertCarbsRequired) && sp.getBoolean(app.aaps.core.ui.R.string.key_raise_notifications_as_android_notifications, true)
+                            if (preferences.get(BooleanKey.AlertCarbsRequired) && preferences.get(BooleanKey.AlertUrgentAsAndroidNotification)
                             ) {
                                 val intentAction5m = Intent(context, CarbSuggestionReceiver::class.java)
                                 intentAction5m.putExtra("ignoreDuration", 5)
@@ -392,7 +440,7 @@ class LoopPlugin @Inject constructor(
                                 rxBus.send(EventNewOpenLoopNotification())
 
                                 //only send to wear if Native notifications are turned off
-                                if (!sp.getBoolean(app.aaps.core.ui.R.string.key_raise_notifications_as_android_notifications, true)) {
+                                if (!preferences.get(BooleanKey.AlertUrgentAsAndroidNotification)) {
                                     // Send to Wear
                                     sendToWear(resultAfterConstraints.carbsRequiredText)
                                 }
@@ -544,7 +592,7 @@ class LoopPlugin @Inject constructor(
                             lastRun.lastTBREnact = dateUtil.now()
                             lastRun.lastOpenModeAccept = dateUtil.now()
                             scheduleBuildAndStoreDeviceStatus("acceptChangeRequest")
-                            sp.incInt(app.aaps.core.utils.R.string.key_ObjectivesmanualEnacts)
+                            preferences.inc(IntNonKey.ObjectivesManualEnacts)
                         }
                         rxBus.send(EventAcceptOpenLoopChange())
                     }
