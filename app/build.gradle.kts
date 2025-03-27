@@ -66,7 +66,7 @@ fun gitAvailable(): Boolean {
         process.waitFor()
         return output.readText().isNotEmpty()
     } catch (_: Exception) {
-        return false
+        return true
     }
 }
 

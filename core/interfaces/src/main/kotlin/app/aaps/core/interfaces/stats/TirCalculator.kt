@@ -11,4 +11,5 @@ interface TirCalculator {
     fun calculateDaily(lowMgdl: Double, highMgdl: Double): LongSparseArray<TIR>
     fun stats(context: Context): TableLayout
     fun averageTIR(tirs: LongSparseArray<TIR>): TIR?
+    fun calculateXHour(uur: Long, lowMgdl: Double, highMgdl: Double): LongSparseArray<TIR>
 }
